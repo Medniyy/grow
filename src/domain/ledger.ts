@@ -48,11 +48,25 @@ export function grownMicro(actions: readonly GrowAction[]): MicroUsd {
  * browser or a new device, so it is the half that decides.
  *
  * `kept` is null while UNKNOWN — an unread account, or a chain call that failed.
- * That is not zero, and nothing is recovered from it.
+ * That is not zero, and nothing is recovered from it: an unread balance returns
+ * whatever was already known rather than erasing it.
+ *
+ * ⚠️ IT NEVER GOES DOWN, and that is Q1, not a nicety. The measured value falls
+ * whenever `kept` falls, and `kept` can fall for reasons the ledger is
+ * deliberately blind to — the Grow Account's authority is the user's own wallet,
+ * so any other Solana software can move that balance. Overwriting a recovered
+ * history with a smaller measurement made `grown` DECREASE on the next load:
+ * the total dropped, the ladder walked backwards and the plant shrank, for a
+ * user who had done nothing wrong. Closing a Grow is the one intended reset, and
+ * it wipes the stored value outright rather than measuring a smaller one.
  */
-export function recoveredMicro(ledgerMicro: MicroUsd, keptMicro: MicroUsd | null): MicroUsd {
-  if (keptMicro == null) return 0;
-  return Math.max(0, keptMicro - ledgerMicro);
+export function recoveredMicro(
+  ledgerMicro: MicroUsd,
+  keptMicro: MicroUsd | null,
+  previousMicro: MicroUsd = 0,
+): MicroUsd {
+  if (keptMicro == null) return previousMicro;
+  return Math.max(previousMicro, Math.max(0, keptMicro - ledgerMicro));
 }
 
 /** Confirmed rows that carry no on-chain amount. Should always be empty. */

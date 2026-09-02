@@ -32,4 +32,19 @@ export const env = {
 
   /** Stage 3 builds against the mock swap port so rehearsal costs nothing. */
   mockSwap: bool(process.env.EXPO_PUBLIC_MOCK_SWAP),
+
+  /**
+   * Permission to fall back to DFlow's keyless developer endpoint.
+   *
+   * ⚠️ OFF BY DEFAULT, ON PURPOSE. With no proxy configured the client used to
+   * fall back to that endpoint silently, and the comment beside the fallback
+   * said "never for production" while nothing enforced it. Since
+   * `EXPO_PUBLIC_*` values are inlined at BUILD time and a plain rebuild happily
+   * ships a stale one, a launch build with an empty API base URL would have gone
+   * out quietly pointed at a keyless, rate-limited, unkeyed endpoint — and the
+   * first sign of it would have been a demo failing in front of people.
+   *
+   * Local work opts in; a build that forgets the proxy fails loudly instead.
+   */
+  allowDevEndpoint: bool(process.env.EXPO_PUBLIC_ALLOW_DEV_ENDPOINT),
 } as const;

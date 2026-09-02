@@ -46,12 +46,24 @@ export type OrderParams = {
 
 /**
  * Requests go through the Railway proxy when one is configured, so the
- * production key never ships in a browser bundle (SPEC §13). With no proxy
- * configured we fall back to the keyless dev endpoint, which does send
- * permissive CORS — fine for local work, never for production.
+ * production key never ships in a browser bundle (SPEC §13).
+ *
+ * ⚠️ THE FALLBACK IS OPT-IN. The keyless dev endpoint sends permissive CORS and
+ * is fine for local work — but it is rate-limited and unkeyed, and falling back
+ * to it SILENTLY meant a production build with an empty `EXPO_PUBLIC_API_BASE_URL`
+ * shipped pointed at it with nothing on screen to say so. Env values are inlined
+ * at build time, so that is a mistake a rebuild cannot correct by itself.
+ * Refusing here costs one env var locally and removes a whole class of launch.
  */
 function endpoint(): string {
-  return env.apiBaseUrl ? `${env.apiBaseUrl.replace(/\/$/, '')}/order` : `${DEV_ENDPOINT}/order`;
+  if (env.apiBaseUrl) return `${env.apiBaseUrl.replace(/\/$/, '')}/order`;
+  if (!env.allowDevEndpoint) {
+    throw new Error(
+      'No backend is configured. Set EXPO_PUBLIC_API_BASE_URL, or ' +
+        'EXPO_PUBLIC_ALLOW_DEV_ENDPOINT=1 to use the keyless dev endpoint locally.',
+    );
+  }
+  return `${DEV_ENDPOINT}/order`;
 }
 
 export async function fetchOrder(params: OrderParams, signal?: AbortSignal): Promise<DFlowOrder> {

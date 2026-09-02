@@ -44,18 +44,46 @@ const PAD = ROW * ((VISIBLE - 1) / 2);
 const SETTLE_MS = 90;
 
 /**
- * How much of a mouse or trackpad scroll the barrel actually takes.
- *
- * ⚠️ Web only, and it is the difference between a wheel and a list. One mouse
- * notch delivers ~100px, which at a 52px row throws the selection two or three
- * values at a time — the control looks like a picker and behaves like a flick.
- *
- * Damping, NOT a row-per-notch lock. That was the first attempt and it felt
- * worse than the problem: quantising a continuous gesture makes a physical
- * object feel like a stepper, and a trackpad — which sends a stream of small
- * deltas — became unusable. Scaling the delta keeps the motion continuous and
- * under the finger, and the existing settle-and-snap does the rest. A finger on
+ * Momentum — how a mouse or trackpad turns the barrel. Web only; a finger on
  * glass has none of this trouble, so native is left alone.
+ *
+ * ⚠️ THREE ANSWERS WERE TRIED AND REJECTED BEFORE THIS ONE. Raw scrolling threw
+ * the selection two or three values per notch. One-notch-one-row quantised a
+ * continuous gesture and made a physical object feel like a stepper, which also
+ * made a trackpad's stream of small deltas unusable. Flat damping — scaling each
+ * delta by 0.34 — was closer but had the same tell: every gesture resolved to
+ * exactly one row and stopped dead with it, so the wheel still stepped.
+ *
+ * What was missing is that a real barrel keeps turning after you let go. A wheel
+ * event no longer MOVES the strip; it adds VELOCITY, and a frame loop spends it
+ * against a decay. So a notch rolls about a row and glides to rest, a flick
+ * accumulates across events and keeps going, and a trackpad's dribble of small
+ * deltas adds up into one continuous turn instead of a queue of steps.
+ *
+ * The numbers, so they can be re-tuned without re-deriving them: a gesture's
+ * total travel is impulse x decay-sum, where the decay sum is
+ * 1 / (1 - GLIDE_DECAY) = 12.5 frames' worth. One ~100px notch therefore travels
+ * 100 x 0.045 x 12.5 = about 56px — a little over one 52px row — and the glide
+ * runs about 600ms before GLIDE_MIN_PX cuts it.
+ */
+const WHEEL_IMPULSE = 0.045;
+/** Velocity kept per frame at 60fps. Lower is a stickier barrel. */
+const GLIDE_DECAY = 0.92;
+/** Below this the barrel has stopped; anything less is a sub-pixel crawl. */
+const GLIDE_MIN_PX = 0.4;
+/**
+ * ⚠️ Half a row, and that is not a taste call. `handleScroll` reads the
+ * selection as `round(offset / ROW)`, so a frame that travels further than half
+ * a row skips indices — the detent ticks go quiet and `onChange` lies about
+ * which rows the user passed.
+ */
+const GLIDE_MAX_PX = ROW / 2;
+/** One frame at 60fps, so velocity is per-frame and not per-millisecond. */
+const FRAME_MS = 1000 / 60;
+/**
+ * The fallback for `useReducedMotion`: the old flat damping, which lands on a
+ * row and stays there. Someone who has asked the system for less movement should
+ * not be handed a control that keeps moving after they have stopped.
  */
 const WHEEL_DAMPING = 0.34;
 /** Firefox reports scroll in LINES, not pixels, when `deltaMode` is 1. */
@@ -128,8 +156,12 @@ export function Wheel({
    */
   const own = useRef(index);
   /** Current props, for the DOM listener that is attached only once. */
-  const live = useRef({ onChange, count: items.length });
-  live.current = { onChange, count: items.length };
+  const live = useRef({ onChange, count: items.length, reducedMotion });
+  live.current = { onChange, count: items.length, reducedMotion };
+  /** Pixels per frame the barrel is still carrying, and the loop spending them. */
+  const velocity = useRef(0);
+  const glide = useRef<number | null>(null);
+  const lastFrame = useRef(0);
   /** True while the arrival turn owns the offset — see `handleScroll`. */
   const nudging = useRef(false);
 
@@ -212,17 +244,47 @@ export function Wheel({
   }, []);
 
   /**
-   * Damped scrolling — web only.
+   * Scrolling with momentum — web only.
    *
    * Attached to the DOM node rather than passed as a prop, because
    * react-native-web does not forward `onWheel`, and it has to be non-passive to
-   * cancel the browser's own scroll before applying our fraction of it. Detents,
-   * `onChange` and the snap all come from `handleScroll`, exactly as they do for
-   * a finger — this only decides how far one gesture travels.
+   * cancel the browser's own scroll before applying our own motion instead.
+   * Detents, `onChange` and the final snap all still come from `handleScroll`,
+   * exactly as they do for a finger — the glide moves the offset and nothing
+   * else, so the barrel ticks its way past each row as it rolls.
    */
   useEffect(() => {
     const node = scrollNode(ref.current);
     if (!node) return;
+
+    const limit = () => Math.max(0, live.current.count - 1) * ROW;
+
+    const stop = () => {
+      velocity.current = 0;
+      if (glide.current !== null) cancelAnimationFrame(glide.current);
+      glide.current = null;
+    };
+
+    const step = (now: number) => {
+      // Measured in frames, not milliseconds, and capped: a backgrounded tab
+      // resumes with a huge gap, and spending all of it at once would fling the
+      // barrel across the list the moment the user came back.
+      const frames = Math.min(3, (now - lastFrame.current) / FRAME_MS);
+      lastFrame.current = now;
+
+      const wanted = node.scrollTop + velocity.current * frames;
+      const landed = Math.max(0, Math.min(limit(), wanted));
+      node.scrollTop = landed;
+
+      // A barrel that has run out of rows has spent its momentum. Keeping the
+      // velocity would leave it pressing silently against the end and then
+      // lurching the instant anything moved.
+      if (landed !== wanted) return stop();
+
+      velocity.current *= Math.pow(GLIDE_DECAY, frames);
+      if (Math.abs(velocity.current) < GLIDE_MIN_PX) return stop();
+      glide.current = requestAnimationFrame(step);
+    };
 
     const onWheel = (event: Event) => {
       const wheel = event as WheelEvent;
@@ -231,12 +293,33 @@ export function Wheel({
       wheel.preventDefault();
 
       const pixels = wheel.deltaMode === 1 ? wheel.deltaY * LINE_HEIGHT_PX : wheel.deltaY;
-      const limit = Math.max(0, live.current.count - 1) * ROW;
-      node.scrollTop = Math.max(0, Math.min(limit, node.scrollTop + pixels * WHEEL_DAMPING));
+
+      if (live.current.reducedMotion) {
+        node.scrollTop = Math.max(0, Math.min(limit(), node.scrollTop + pixels * WHEEL_DAMPING));
+        return;
+      }
+
+      // Each event ADDS to the turn rather than replacing it, which is the whole
+      // difference: a second notch on top of a live glide goes further than the
+      // first one did, the way a hand does to a real wheel.
+      const next = velocity.current + pixels * WHEEL_IMPULSE;
+      velocity.current = Math.max(-GLIDE_MAX_PX, Math.min(GLIDE_MAX_PX, next));
+
+      if (glide.current === null) {
+        lastFrame.current = performance.now();
+        glide.current = requestAnimationFrame(step);
+      }
     };
 
     node.addEventListener('wheel', onWheel, { passive: false });
-    return () => node.removeEventListener('wheel', onWheel);
+    // Touching the barrel stops it dead. A glide still running under a finger
+    // that has grabbed the wheel is the same fight the arrival turn had.
+    node.addEventListener('pointerdown', stop, { passive: true });
+    return () => {
+      node.removeEventListener('wheel', onWheel);
+      node.removeEventListener('pointerdown', stop);
+      stop();
+    };
     // Registered once. `live` carries the current row count, so a parent that
     // re-renders does not re-attach a DOM listener every time.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -30,11 +30,21 @@ import { MilestoneMark } from './MilestoneMark';
 export function UnlockMoment({
   milestone,
   alsoUnlocked = 0,
+  capability,
   onDone,
 }: {
   milestone: Milestone;
   /** How many further milestones crossed in the same Grow. */
   alsoUnlocked?: number;
+  /**
+   * A rung that handed out something that is not an object.
+   *
+   * Rendered UNDER the object and its statement, never instead of them: the
+   * T-shirt is still earned and "you kept every cent" is still the point. This
+   * is the second, quieter sentence for the one rung on the ladder that gives
+   * out an ability rather than a thing — see `config/yield.ts`.
+   */
+  capability?: string;
   onDone?: () => void;
 }) {
   const feedback = useFeedback();
@@ -102,6 +112,12 @@ export function UnlockMoment({
             ? `and ${alsoUnlocked} more · you kept every cent`
             : 'and you kept every cent'}
         </Text>
+
+        {capability ? (
+          <View style={styles.capability}>
+            <Text style={styles.capabilityLine}>{capability}</Text>
+          </View>
+        ) : null}
       </Animated.View>
     </View>
   );
@@ -156,4 +172,25 @@ const styles = StyleSheet.create({
   title: { ...font.xl, fontWeight: weight.semibold, color: color.ink, marginTop: space.sm },
   statement: { ...font.body, fontWeight: weight.medium, color: color.ink, marginTop: space.md },
   subtitle: { ...font.small, color: color.inkMuted, marginTop: space.sm },
+
+  /**
+   * Divided from the object above it, because it is a different KIND of thing.
+   * Without the rule it reads as a third line of the same sentence, and the one
+   * moment in the product where the ladder changes what it gives out looks like
+   * nothing happened.
+   */
+  capability: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    marginTop: space.lg,
+    paddingTop: space.base,
+    borderTopWidth: 1,
+    borderTopColor: color.border,
+  },
+  capabilityLine: {
+    ...font.small,
+    fontWeight: weight.medium,
+    color: color.growthPressed,
+    textAlign: 'center',
+  },
 });

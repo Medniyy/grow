@@ -55,6 +55,23 @@ export { GROW_ACCOUNT_SEED } from './seed';
  * spent*. Only a Verified Commitment makes the second promise.
  */
 
+/**
+ * A transaction and the height it stops being valid at.
+ *
+ * ⚠️ THE TWO COME FROM THE SAME `getLatestBlockhash` CALL, and they have to.
+ * Every builder here used to return only the transaction, and every caller then
+ * made a SECOND `getLatestBlockhash` to get an expiry — the height of a
+ * different, later blockhash than the one actually inside the transaction. The
+ * deadline was therefore always too generous: a genuinely expired transaction
+ * was never classified as expired, it burned the whole poll window and then
+ * reported the wrong thing, and the stored height kept reconciliation answering
+ * "still unknown" forever.
+ */
+export type BuiltTransaction = {
+  readonly transaction: VersionedTransaction;
+  readonly lastValidBlockHeight: number;
+};
+
 /** SPL Token program. Also the owner program the address is derived against. */
 export const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 
@@ -98,7 +115,7 @@ export async function growAccountExists(address: string): Promise<boolean> {
  * DFlow requires `destinationTokenAccount` to exist before execution, so this
  * runs before the first Grow rather than alongside it.
  */
-export async function buildOpenGrowAccountTx(ownerPubkey: string): Promise<VersionedTransaction> {
+export async function buildOpenGrowAccountTx(ownerPubkey: string): Promise<BuiltTransaction> {
   const owner = new PublicKey(ownerPubkey);
   const address = new PublicKey(await growAccountAddress(ownerPubkey));
   const rpc = connection();
@@ -131,14 +148,17 @@ export async function buildOpenGrowAccountTx(ownerPubkey: string): Promise<Versi
     data: Buffer.from(data),
   });
 
-  const { blockhash } = await rpc.getLatestBlockhash();
-  return new VersionedTransaction(
-    new TransactionMessage({
-      payerKey: owner,
-      recentBlockhash: blockhash,
-      instructions: [create, initialize],
-    }).compileToV0Message(),
-  );
+  const { blockhash, lastValidBlockHeight } = await rpc.getLatestBlockhash();
+  return {
+    transaction: new VersionedTransaction(
+      new TransactionMessage({
+        payerKey: owner,
+        recentBlockhash: blockhash,
+        instructions: [create, initialize],
+      }).compileToV0Message(),
+    ),
+    lastValidBlockHeight,
+  };
 }
 
 /** The user's ordinary USDC account — where a withdrawal lands. */
@@ -174,7 +194,7 @@ export async function buildDepositTx(
   ownerPubkey: string,
   amountAtomic: bigint,
   fromAccount: string,
-): Promise<VersionedTransaction> {
+): Promise<BuiltTransaction> {
   if (amountAtomic <= 0n) throw new Error('Nothing to keep.');
 
   const owner = new PublicKey(ownerPubkey);
@@ -197,14 +217,17 @@ export async function buildDepositTx(
     data: Buffer.from(data),
   });
 
-  const { blockhash } = await connection().getLatestBlockhash();
-  return new VersionedTransaction(
-    new TransactionMessage({
-      payerKey: owner,
-      recentBlockhash: blockhash,
-      instructions: [transfer],
-    }).compileToV0Message(),
-  );
+  const { blockhash, lastValidBlockHeight } = await connection().getLatestBlockhash();
+  return {
+    transaction: new VersionedTransaction(
+      new TransactionMessage({
+        payerKey: owner,
+        recentBlockhash: blockhash,
+        instructions: [transfer],
+      }).compileToV0Message(),
+    ),
+    lastValidBlockHeight,
+  };
 }
 
 /**
@@ -220,7 +243,7 @@ export async function buildDepositTx(
 export async function buildWithdrawTx(
   ownerPubkey: string,
   amountAtomic: bigint,
-): Promise<VersionedTransaction> {
+): Promise<BuiltTransaction> {
   if (amountAtomic <= 0n) throw new Error('Nothing to take out.');
 
   const owner = new PublicKey(ownerPubkey);
@@ -256,12 +279,15 @@ export async function buildWithdrawTx(
     data: Buffer.from(data),
   });
 
-  const { blockhash } = await rpc.getLatestBlockhash();
-  return new VersionedTransaction(
-    new TransactionMessage({
-      payerKey: owner,
-      recentBlockhash: blockhash,
-      instructions: [createAta, transfer],
-    }).compileToV0Message(),
-  );
+  const { blockhash, lastValidBlockHeight } = await rpc.getLatestBlockhash();
+  return {
+    transaction: new VersionedTransaction(
+      new TransactionMessage({
+        payerKey: owner,
+        recentBlockhash: blockhash,
+        instructions: [createAta, transfer],
+      }).compileToV0Message(),
+    ),
+    lastValidBlockHeight,
+  };
 }

@@ -21,6 +21,24 @@ import { USDC, WSOL } from './tokens';
  */
 export const DEMO_SIGNATURE_PREFIX = 'demo:';
 
+/**
+ * A supply position, for looking at the earnings strip before any real capital
+ * is committed to one.
+ *
+ * ⚠️ Deliberately NOT derived from `kept`. The Grow Account balance is read from
+ * the chain and is real money; multiplying it by a fraction would put a real
+ * figure and an invented one in the same sentence. These are two flat invented
+ * numbers, and the screen that shows them already says DEMO DATA out loud.
+ *
+ * The earnings figure is chosen to be over a cent on purpose — under it the
+ * strip shows only the light, which is the state the demo does NOT need help
+ * imagining.
+ */
+export const DEMO_YIELD_POSITION = {
+  supplied: usdToMicro(400),
+  earned: usdToMicro(1.23),
+} as const;
+
 /** $1,127.06 — 94% of the way to iPhone at $1,199. */
 const DEMO_STEPS: readonly number[] = [1, 1, 3, 5, 15, 25, 50, 100, 250, 350, 327.06];
 

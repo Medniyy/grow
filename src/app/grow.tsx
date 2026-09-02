@@ -15,6 +15,7 @@ import { Button } from '../components/ui/Button';
 import { Screen } from '../components/ui/Screen';
 import { Wheel } from '../components/ui/Wheel';
 import { HIGH_IMPACT_PCT, PENDING_COPY_SHIFT_MS } from '../config/limits';
+import { capabilityIn } from '../config/yield';
 import {
   availableMicro,
   defaultAsset,
@@ -227,6 +228,7 @@ export default function GrowScreen() {
           <UnlockMoment
             milestone={headline}
             alsoUnlocked={flow.justUnlocked.length - 1}
+            capability={capabilityIn(flow.justUnlocked)}
             onDone={() => setUnlockSettled(true)}
           />
         ) : null}

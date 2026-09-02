@@ -66,7 +66,20 @@ export default function SettingsScreen() {
         <Row label="Network" value={env.cluster} warn />
         <Row label="Spend cap" value={`$${MIN_GROW_USD} – $${MAX_GROW_USD} per Grow`} />
         <Row label="Swap route" value={env.mockSwap ? 'Mock (spends nothing)' : 'DFlow'} />
-        <Row label="Backend" value={env.apiBaseUrl || 'keyless dev endpoint'} />
+        {/* Three states, not two: a proxy, the opted-in dev endpoint, or a
+            build that cannot reach DFlow at all. The last one used to be
+            indistinguishable from the middle one. */}
+        <Row
+          label="Backend"
+          value={
+            env.apiBaseUrl
+              ? env.apiBaseUrl
+              : env.allowDevEndpoint
+                ? 'keyless dev endpoint'
+                : 'not configured'
+          }
+          warn={!env.apiBaseUrl}
+        />
         {seeded ? <Row label="Data" value="Seeded demo, not yours" warn /> : null}
         <Row label="Wallet" value={shortAddress(grow.pubkey ?? '')} />
       </View>

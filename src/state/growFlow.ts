@@ -1,5 +1,4 @@
 import { VersionedTransaction } from '@solana/web3.js';
-import bs58 from 'bs58';
 // Imported explicitly rather than leaning on the global the root layout installs,
 // so this module type-checks and works regardless of load order.
 import { Buffer } from 'buffer';
@@ -15,6 +14,7 @@ import { newId } from '../lib/ids';
 import { buildDepositTx } from '../lib/growAccount';
 import { connection } from '../lib/solana/connection';
 import { awaitSignature, checkSignature, confirmGrow } from '../lib/solana/confirm';
+import { signatureOf } from '../lib/solana/signature';
 import { humanTransactionError } from '../lib/solana/failure';
 import { type GrowQuote, swapPort } from '../lib/swap';
 import { useWallet } from '../lib/wallet';
@@ -141,11 +141,17 @@ export function useGrowFlow() {
 
       try {
         setPhase('awaiting-signature');
-        const tx = await buildDepositTx(wallet.publicKey, atomic, entry.sourceAccount);
-        const { lastValidBlockHeight } = await connection().getLatestBlockhash();
-        const signed = await wallet.signTransaction(tx);
+        // ⚠️ The expiry comes back WITH the transaction, from the same
+        // `getLatestBlockhash` that produced the blockhash inside it. Fetching a
+        // second one here described a different block — see `BuiltTransaction`.
+        const { transaction, lastValidBlockHeight } = await buildDepositTx(
+          wallet.publicKey,
+          atomic,
+          entry.sourceAccount,
+        );
+        const signed = await wallet.signTransaction(transaction);
 
-        const signature = bs58.encode(signed.signatures[0]);
+        const signature = signatureOf(signed);
         row = transition(row, 'submitted', { signature, lastValidBlockHeight });
         await grow.recordAction(row); // persisted BEFORE the network sees it
 
@@ -167,13 +173,19 @@ export function useGrowFlow() {
           setPhase('done');
           portfolio.refresh();
           growAccount.refresh();
+        } else if (outcome.status === 'timeout') {
+          // ⚠️ THE ROW IS LEFT OPEN. We stopped waiting; the chain did not stop
+          // working. Writing 'failed' here is terminal and reconciliation would
+          // never look at it again — see `ConfirmOutcome`.
+          setError('That Grow is taking longer than usual. It has not failed — Grow will pick it up the next time you open the app.');
+          setPhase('error');
         } else {
           row = transition(row, outcome.status);
           await grow.recordAction(row);
           setError(
             outcome.status === 'expired'
               ? 'That Grow expired before it landed. Nothing was spent.'
-              : 'That Grow did not go through.',
+              : (outcome.message ?? 'That Grow did not go through.'),
           );
           setPhase('error');
         }
@@ -279,7 +291,7 @@ export function useGrowFlow() {
         const tx = VersionedTransaction.deserialize(Buffer.from(order.transaction, 'base64'));
         const signed = await wallet.signTransaction(tx);
 
-        const signature = bs58.encode(signed.signatures[0]);
+        const signature = signatureOf(signed);
         row = transition(row, 'submitted', { signature });
         await grow.recordAction(row); // persisted BEFORE the network sees it
 
@@ -293,7 +305,18 @@ export function useGrowFlow() {
         await grow.recordAction(row);
         setPhase('pending');
 
-        const outcome = await confirmGrow(signature, order.lastValidBlockHeight, wallet.publicKey);
+        // ⚠️ THE GROW ACCOUNT, NOT THE WALLET. The amount is measured in the
+        // account the dollars were promised to, so a swap that lands anywhere
+        // else — a dropped `destinationTokenAccount`, an API that changed under
+        // us — is a failure and not a silently successful Grow.
+        const outcome = await confirmGrow(
+          signature,
+          order.lastValidBlockHeight,
+          // Non-null past the guard at the top of `execute`, which refuses to
+          // start a real Grow without an open Grow Account, and past the mock
+          // branch above, which has already returned.
+          growAccount.address as string,
+        );
 
         if (outcome.status === 'confirmed') {
           row = transition(row, 'confirmed', { usdcReceivedMicro: outcome.usdcReceivedMicro });
@@ -303,13 +326,17 @@ export function useGrowFlow() {
           portfolio.refresh();
           // The kept balance is the product's central number and it just moved.
           growAccount.refresh();
+        } else if (outcome.status === 'timeout') {
+          // Left open on purpose, exactly as in `keepDollars`.
+          setError('That Grow is taking longer than usual. It has not failed — Grow will pick it up the next time you open the app.');
+          setPhase('error');
         } else {
           row = transition(row, outcome.status);
           await grow.recordAction(row);
           setError(
             outcome.status === 'expired'
               ? 'That Grow expired before it landed. Nothing was spent.'
-              : 'That Grow did not go through.',
+              : (outcome.message ?? 'That Grow did not go through.'),
           );
           setPhase('error');
         }
@@ -347,10 +374,16 @@ export function useGrowFlow() {
 export function useReconciliation() {
   const { publicKey } = useWallet();
   const grow = useGrow();
+  const growAccount = useGrowAccount();
   const done = useRef<string | null>(null);
+  const destination = growAccount.address;
 
   useEffect(() => {
     if (!publicKey || grow.loading || env.mockSwap) return;
+    // The Grow Account address is derived a tick after mount and every amount is
+    // measured inside it. Waiting is right: reconciling against an unknown
+    // destination would classify perfectly good rows as failures.
+    if (!destination) return;
     if (done.current === publicKey) return;
     done.current = publicKey;
 
@@ -361,21 +394,36 @@ export function useReconciliation() {
         }
         if (!row.signature || row.lastValidBlockHeight == null) continue;
 
-        const outcome = await checkSignature(row.signature, row.lastValidBlockHeight, publicKey);
-        if (outcome.status === 'confirmed') {
-          // A USDC row is a transfer between two accounts of the SAME OWNER, and
-          // `checkSignature` measures the delta per owner — so it nets to zero
-          // and would resurrect the row as a $0 Grow. The amount was fixed by
-          // the instruction, so the row already carries the settled figure.
-          const settled =
-            row.inputMint === USDC.mint ? row.minOutMicro : outcome.usdcReceivedMicro;
-          await grow.recordAction(transition(row, 'confirmed', { usdcReceivedMicro: settled }));
-        } else if (outcome.status === 'expired') {
-          await grow.recordAction(transition(row, 'expired'));
+        /**
+         * ⚠️ ONE BAD ROW MUST NOT STOP THE REST. This was a single unguarded
+         * loop: a throw anywhere in it — a storage write, an RPC hiccup —
+         * abandoned every later row, and `done` had already been set, so
+         * nothing tried again until the next launch.
+         */
+        try {
+          const outcome = await checkSignature(
+            row.signature,
+            row.lastValidBlockHeight,
+            destination,
+          );
+          if (outcome.status === 'confirmed') {
+            // Read from the chain for USDC rows too. That used to be impossible
+            // — the delta was measured per OWNER, and a transfer between two
+            // accounts of the same owner nets to zero — so the row's own figure
+            // was trusted instead. Measured inside the destination it is a
+            // straightforward positive delta, and Q5 gets its way everywhere.
+            await grow.recordAction(
+              transition(row, 'confirmed', { usdcReceivedMicro: outcome.usdcReceivedMicro }),
+            );
+          } else if (outcome.status === 'expired') {
+            await grow.recordAction(transition(row, 'expired'));
+          }
+          // 'timeout' means the chain has not decided yet — leave the row open
+          // and ask again next launch.
+        } catch (cause) {
+          console.warn('reconciliation failed for', row.signature, cause);
         }
-        // A 'failed' outcome with reason 'still unknown' means the chain has not
-        // decided yet — leave the row open and try again next launch.
       }
     })();
-  }, [publicKey, grow.loading, grow.actions, grow]);
+  }, [publicKey, destination, grow.loading, grow.actions, grow]);
 }

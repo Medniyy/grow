@@ -86,3 +86,17 @@ describe('the spend guard (Q14)', () => {
     expect(validateGrowAmount(Infinity)?.kind).toBe('not-a-number');
   });
 });
+
+describe('holdingValueMicro precision', () => {
+  it('prices a balance past 2^53 atomic units exactly', () => {
+    // 1,234,567,890.123456789 tokens at $1 — more atomic units than a double can
+    // hold, and the answer still matches the exact BigInt arithmetic to the
+    // micro-dollar.
+    expect(holdingValueMicro(1_234_567_890_123_456_789n, 9, 1)).toBe(1_234_567_890_123_456);
+  });
+
+  it('leaves the ordinary case exactly where it was', () => {
+    expect(holdingValueMicro(2_500_000n, 6, 1)).toBe(2_500_000);
+    expect(holdingValueMicro(0n, 6, 1)).toBe(0);
+  });
+});

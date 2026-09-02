@@ -139,6 +139,14 @@ export const shadow = {
   card: '0px 8px 14px rgba(20, 20, 15, 0.05)',
   /** The unlock moment, which should feel like it arrived in front of you. */
   moment: '0px 18px 30px rgba(20, 20, 15, 0.10)',
+  /**
+   * A soft bloom in the growth accent, for the one figure that became a button.
+   *
+   * Coloured rather than dark on purpose: every other shadow here lifts a
+   * surface off the ground, and this one is light coming OUT of the thing. It is
+   * the only glow in the app, so it stays the only place this is used.
+   */
+  glow: '0px 0px 18px 5px rgba(14, 159, 110, 0.40)',
   /** The desktop-only device frame sitting on its dark ground. */
   device: '0px 26px 42px rgba(20, 20, 15, 0.45)',
 } as const;

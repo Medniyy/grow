@@ -122,3 +122,28 @@ describe('cold-start reconciliation (Q3)', () => {
     expect(unreconciledActions(actions).map((a) => a.id)).toEqual(['b', 'c']);
   });
 });
+
+describe('recoveredMicro never goes down (Q1)', () => {
+  it('keeps a recovered history when the kept balance falls', () => {
+    // ⚠️ THE BUG THIS EXISTS FOR. The Grow Account's authority is the user's own
+    // wallet, so any other Solana software can move that balance — and the
+    // measured figure falls with it. Overwriting a recovered history with the
+    // smaller measurement made `grown` DECREASE on the next load: the total
+    // dropped, the ladder walked backwards and the plant shrank.
+    const recovered = recoveredMicro(usdToMicro(13), usdToMicro(18));
+    expect(recovered).toBe(usdToMicro(5));
+
+    // Someone empties the account outside the app; the ledger has not changed.
+    expect(recoveredMicro(usdToMicro(13), 0, recovered)).toBe(usdToMicro(5));
+  });
+
+  it('still rises when the chain knows about more than this device does', () => {
+    expect(recoveredMicro(usdToMicro(10), usdToMicro(30), usdToMicro(5))).toBe(usdToMicro(20));
+  });
+
+  it('treats an unreadable balance as no news, not as zero', () => {
+    // "Could not read" and "is empty" are different facts. A failed RPC call
+    // must not be the thing that erases somebody's history.
+    expect(recoveredMicro(usdToMicro(13), null, usdToMicro(5))).toBe(usdToMicro(5));
+  });
+});

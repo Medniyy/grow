@@ -69,7 +69,22 @@ export function holdingValueMicro(
   priceUsd: number | undefined,
 ): MicroUsd {
   if (!priceUsd || !Number.isFinite(priceUsd)) return 0;
-  const ui = Number(amountAtomic) / 10 ** decimals;
+
+  /**
+   * Split before converting: the whole-token part divides exactly in BigInt,
+   * and only the sub-token remainder — always smaller than one token — becomes
+   * a float.
+   *
+   * Defensive, not a bug that was reachable. `Number(amountAtomic)` on its own
+   * does lose digits above 2^53, but it was measured against the exact BigInt
+   * arithmetic and no Solana balance gets there in practice: at nine decimals,
+   * a trillion-token supply still leaves the micro-dollar result inside a
+   * double's 15 significant digits, and both forms return the same figure. This
+   * costs one division and removes the question.
+   */
+  const scale = 10n ** BigInt(decimals);
+  const ui = Number(amountAtomic / scale) + Number(amountAtomic % scale) / Number(scale);
+
   return usdToMicro(Math.floor(ui * priceUsd * 1_000_000) / 1_000_000);
 }
 

@@ -9,15 +9,15 @@ import {
 } from 'react';
 
 import type { MicroUsd } from '../domain/money';
-import { VersionedTransaction } from '@solana/web3.js';
-import bs58 from 'bs58';
 
 import {
+  type BuiltTransaction,
   buildOpenGrowAccountTx,
   buildWithdrawTx,
   growAccountAddress,
   growAccountExists,
 } from '../lib/growAccount';
+import { signatureOf } from '../lib/solana/signature';
 import { fetchAccountOpenedAt } from '../lib/solana/accountAge';
 import { fetchTokenAccountBalance } from '../lib/solana/balances';
 import { awaitSignature } from '../lib/solana/confirm';
@@ -157,27 +157,34 @@ export function GrowAccountProvider({ children }: { children: ReactNode }) {
    * ordinary transactions the user's own wallet authorises.
    */
   const run = useCallback(
-    async (build: () => Promise<VersionedTransaction>, whatFailed: string) => {
+    async (build: () => Promise<BuiltTransaction>, whatFailed: string) => {
       if (!wallet.publicKey) throw new Error('Connect a wallet first.');
       setWorking(true);
       setError(null);
       try {
-        const signed = await wallet.signTransaction(await build());
-        const signature = bs58.encode(signed.signatures[0]);
+        // ⚠️ The expiry travels with the transaction. A second
+        // `getLatestBlockhash` here described a different block than the one
+        // signed — see `BuiltTransaction`.
+        const { transaction, lastValidBlockHeight } = await build();
+        const signed = await wallet.signTransaction(transaction);
+        const signature = signatureOf(signed);
         const rpc = connection();
-        const { lastValidBlockHeight } = await rpc.getLatestBlockhash();
         await rpc.sendRawTransaction(signed.serialize(), { skipPreflight: false, maxRetries: 3 });
 
         // Polled, never `confirmTransaction` — that one subscribes over a
         // websocket the HTTP proxy does not serve, and hangs forever on a
         // transaction that already succeeded.
         const outcome = await awaitSignature(signature, lastValidBlockHeight);
-        if (outcome.status !== 'confirmed') {
-          throw new Error(
-            outcome.status === 'expired'
-              ? 'That expired before it landed. Nothing was spent.'
-              : `It did not go through (${outcome.reason}).`,
-          );
+        if (outcome.status === 'expired') {
+          throw new Error('That expired before it landed. Nothing was spent.');
+        }
+        if (outcome.status === 'timeout') {
+          // Not a failure, and it must not be worded as one: the transaction is
+          // still live and usually lands moments later.
+          throw new Error('That is taking longer than usual. Reopen Grow in a moment to check.');
+        }
+        if (outcome.status === 'failed') {
+          throw new Error(`It did not go through (${outcome.reason}).`);
         }
         refresh();
         return true;

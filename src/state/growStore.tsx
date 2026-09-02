@@ -158,8 +158,9 @@ export function GrowProvider({ children }: { children: ReactNode }) {
     pinnedFrom.current = pubkey;
 
     // Measured once per session against the chain, then remembered — so the
-    // next load already knows it and nothing jumps.
-    const micro = recoveredMicro(ledger, kept);
+    // next load already knows it and nothing jumps. The stored figure is passed
+    // in because the answer may only ever grow — see `recoveredMicro`.
+    const micro = recoveredMicro(ledger, kept, recoveredForOwner);
     if (micro === recoveredForOwner) return;
     setRecovered({ owner: pubkey, micro });
     void writeJson(keyFor(pubkey, 'recovered'), micro);

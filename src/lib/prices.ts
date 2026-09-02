@@ -34,7 +34,22 @@ export async function fetchPrices(mints: readonly string[], signal?: AbortSignal
   if (unique.length === 0) return {};
 
   const response = await fetch(`${PRICE_ENDPOINT}?ids=${unique.join(',')}`, { signal });
-  if (!response.ok) return {};
+
+  /**
+   * ⚠️ A FAILED PRICE READ IS NOT AN EMPTY PORTFOLIO. This used to return `{}`,
+   * and everything downstream is priced — so a rate-limited response emptied the
+   * growable list and the app showed "nothing to grow" to somebody holding
+   * hundreds of dollars, indistinguishable from an empty wallet. The endpoint is
+   * keyless and measured at 5 requests a second, which a demo in front of a room
+   * of people can exceed on its own.
+   */
+  if (!response.ok) {
+    throw new Error(
+      response.status === 429
+        ? 'Prices are rate-limited right now. Give it a few seconds and try again.'
+        : `Could not read prices (${response.status}).`,
+    );
+  }
 
   const body = (await response.json()) as Record<string, PriceEntry>;
 

@@ -10,6 +10,7 @@ import { Screen } from '../components/ui/Screen';
 import { daysGrowing, growStartedAt } from '../domain/days';
 import { formatUsd, type MicroUsd } from '../domain/money';
 import { shortAddress } from '../lib/identity';
+import { YIELD_THRESHOLD_USD, yieldUnlocked } from '../config/yield';
 import { fetchUsdcSupplyRate, type ReserveRate } from '../lib/kamino';
 import { useWallet } from '../lib/wallet';
 import { useGrowAccount } from '../state/growAccount';
@@ -113,9 +114,12 @@ export default function ProfileScreen() {
         same as what you hold today.
       </Text>
 
-      {/* What the capital could be doing. Read-only: Grow does not supply
-          anything anywhere yet, and this must not imply that it does. */}
-      {rate && grow.grown > 0 ? (
+      {/* What the capital could be doing — and nothing more.
+          ⚠️ NO DOOR HERE. A door on Profile was built and rejected on
+          2026-09-02: Profile is the report, and the capability belongs on the
+          figure it acts on, which is the kept balance on Home. Once the rung is
+          earned this note has done its job and disappears. */}
+      {!yieldUnlocked(grow.unlocked) && rate && grow.grown > 0 ? (
         <View style={styles.yield}>
           {/* The RATE, not the pennies. At $25 grown the annual figure is $0.93,
               which reads as "why bother" and argues against the roadmap it is
@@ -124,7 +128,7 @@ export default function ProfileScreen() {
           <Text style={styles.yieldTitle}>Next: put it to work</Text>
           <Text style={styles.yieldBody}>
             Your Grow could be earning {(rate.supplyApy * 100).toFixed(1)}% a year on Kamino,
-            growing on its own between deposits. Not switched on yet.
+            growing on its own between deposits. Unlocks at ${YIELD_THRESHOLD_USD} grown.
           </Text>
         </View>
       ) : null}
