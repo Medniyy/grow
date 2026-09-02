@@ -4,7 +4,7 @@
 
 # Grow
 
-**Strava for saving.**
+**Duolingo for saving money.**
 
 Small amounts, visible progress, milestones worth showing people.
 
