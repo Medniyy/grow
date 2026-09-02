@@ -1,7 +1,7 @@
 # Grow backend
 
 Zero-dependency DFlow proxy. Exists for two reasons: the production DFlow key
-never ships in a browser bundle (SPEC §13, Q13), and the DFlow Trading API sends
+never ships in a browser bundle, and the DFlow Trading API sends
 no CORS headers, so a browser cannot call it directly at all.
 
     GET /health

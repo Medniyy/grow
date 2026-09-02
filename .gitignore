@@ -54,3 +54,16 @@ test-artifacts/
 
 # Raw RPC dumps kept while debugging Token-2022 reads. Scratch, never source.
 t22.json
+
+# Working notes, plans and session journals. Local only — the repo carries code.
+docs/
+iconset.png
+
+# Agent tooling, not product.
+.agents/
+.claude/
+.mcp.json
+AGENTS.md
+CLAUDE.md
+skills-lock.json
+test-artifacts/
