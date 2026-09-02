@@ -67,19 +67,31 @@ const SETTLE_MS = 90;
  * runs about 600ms before GLIDE_MIN_PX cuts it.
  */
 const WHEEL_IMPULSE = 0.045;
-/** Velocity kept per frame at 60fps. Lower is a stickier barrel. */
+/** Velocity kept per frame at 60fps. Only used to size the throw. */
 const GLIDE_DECAY = 0.92;
-/** Below this the barrel has stopped; anything less is a sub-pixel crawl. */
-const GLIDE_MIN_PX = 0.4;
+/** `1 / (1 - GLIDE_DECAY)` — how many frames' worth of travel a throw is worth. */
+const PROJECTION = 1 / (1 - GLIDE_DECAY);
 /**
- * ⚠️ Half a row, and that is not a taste call. `handleScroll` reads the
- * selection as `round(offset / ROW)`, so a frame that travels further than half
- * a row skips indices — the detent ticks go quiet and `onChange` lies about
- * which rows the user passed.
+ * How much of the remaining distance the barrel covers each frame.
+ *
+ * ⚠️ THE BARREL EASES TO A ROW, IT DOES NOT COAST AND THEN GET SNAPPED. The
+ * first momentum version decayed velocity until it ran out, stopped wherever
+ * that happened to be, and left `handleScroll`'s settle timer to yank it onto a
+ * row 90ms later. That is TWO movements with a pause between them, and it is
+ * what made a picker feel cheap: the wheel drifted, hesitated, then jumped.
+ * Projecting the throw onto a row first and easing to exactly that point is one
+ * continuous motion that ends on a detent, which is how a real picker behaves.
  */
-const GLIDE_MAX_PX = ROW / 2;
-/** One frame at 60fps, so velocity is per-frame and not per-millisecond. */
-const FRAME_MS = 1000 / 60;
+const GLIDE_EASE = 0.16;
+/** Close enough to be the row. Below this the remaining travel is invisible. */
+const GLIDE_SETTLED_PX = 0.5;
+/**
+ * ⚠️ Six rows per throw. `handleScroll` reads the selection as
+ * `round(offset / ROW)`, and the ease covers at most `GLIDE_EASE` of the
+ * distance in one frame — so capping the THROW is what keeps a single frame
+ * from stepping over more than half a row and silencing the detent ticks.
+ */
+const GLIDE_MAX_ROWS = 6;
 /**
  * The fallback for `useReducedMotion`: the old flat damping, which lands on a
  * row and stays there. Someone who has asked the system for less movement should
@@ -158,10 +170,12 @@ export function Wheel({
   /** Current props, for the DOM listener that is attached only once. */
   const live = useRef({ onChange, count: items.length, reducedMotion });
   live.current = { onChange, count: items.length, reducedMotion };
-  /** Pixels per frame the barrel is still carrying, and the loop spending them. */
+  /** The throw's remaining strength, the row it is heading for, and the loop. */
   const velocity = useRef(0);
+  const target = useRef<number | null>(null);
   const glide = useRef<number | null>(null);
-  const lastFrame = useRef(0);
+  /** True while the glide owns the offset — see `handleScroll`. */
+  const gliding = useRef(false);
   /** True while the arrival turn owns the offset — see `handleScroll`. */
   const nudging = useRef(false);
 
@@ -261,28 +275,25 @@ export function Wheel({
 
     const stop = () => {
       velocity.current = 0;
+      target.current = null;
+      gliding.current = false;
       if (glide.current !== null) cancelAnimationFrame(glide.current);
       glide.current = null;
     };
 
-    const step = (now: number) => {
-      // Measured in frames, not milliseconds, and capped: a backgrounded tab
-      // resumes with a huge gap, and spending all of it at once would fling the
-      // barrel across the list the moment the user came back.
-      const frames = Math.min(3, (now - lastFrame.current) / FRAME_MS);
-      lastFrame.current = now;
+    const step = () => {
+      const to = target.current;
+      if (to === null) return stop();
 
-      const wanted = node.scrollTop + velocity.current * frames;
-      const landed = Math.max(0, Math.min(limit(), wanted));
-      node.scrollTop = landed;
+      const remaining = to - node.scrollTop;
+      if (Math.abs(remaining) < GLIDE_SETTLED_PX) {
+        // Land ON the row, exactly, so the settle logic has nothing left to do
+        // and the motion ends where it was always going to end.
+        node.scrollTop = to;
+        return stop();
+      }
 
-      // A barrel that has run out of rows has spent its momentum. Keeping the
-      // velocity would leave it pressing silently against the end and then
-      // lurching the instant anything moved.
-      if (landed !== wanted) return stop();
-
-      velocity.current *= Math.pow(GLIDE_DECAY, frames);
-      if (Math.abs(velocity.current) < GLIDE_MIN_PX) return stop();
+      node.scrollTop += remaining * GLIDE_EASE;
       glide.current = requestAnimationFrame(step);
     };
 
@@ -299,16 +310,27 @@ export function Wheel({
         return;
       }
 
-      // Each event ADDS to the turn rather than replacing it, which is the whole
-      // difference: a second notch on top of a live glide goes further than the
-      // first one did, the way a hand does to a real wheel.
-      const next = velocity.current + pixels * WHEEL_IMPULSE;
-      velocity.current = Math.max(-GLIDE_MAX_PX, Math.min(GLIDE_MAX_PX, next));
+      // Each event ADDS to the throw rather than replacing it, which is the
+      // whole difference: a second notch on top of a live glide goes further
+      // than the first one did, the way a hand does to a real wheel.
+      velocity.current += pixels * WHEEL_IMPULSE;
 
-      if (glide.current === null) {
-        lastFrame.current = performance.now();
-        glide.current = requestAnimationFrame(step);
-      }
+      // Where the throw is heading, rounded to a row and clamped to the list.
+      // The starting point is the CURRENT TARGET when one exists, not the
+      // offset — mid-glide the offset is behind the decision the user has
+      // already made, and measuring from it silently swallows the second notch.
+      const from = target.current ?? node.scrollTop;
+      const throwPx = velocity.current * PROJECTION;
+      const capped = Math.max(-GLIDE_MAX_ROWS * ROW, Math.min(GLIDE_MAX_ROWS * ROW, throwPx));
+      const row = Math.round((from + capped) / ROW);
+      target.current = Math.max(0, Math.min(limit(), row * ROW));
+
+      // Spent. The next notch starts its own throw rather than compounding this
+      // one forever, which is what a hand on a barrel actually does.
+      velocity.current = 0;
+      gliding.current = true;
+
+      if (glide.current === null) glide.current = requestAnimationFrame(step);
     };
 
     node.addEventListener('wheel', onWheel, { passive: false });
@@ -352,6 +374,13 @@ export function Wheel({
 
     // `snapToInterval` covers native; the web build has no snapping of its own,
     // so the wheel settles itself once the offset stops moving.
+    //
+    // ⚠️ Not while the glide is running. The glide already lands exactly on a
+    // row, and a settle timer firing mid-flight starts a second, competing
+    // smooth scroll to the same place on a different curve — the same fight the
+    // arrival nudge had, and it reads as a stutter just before the wheel stops.
+    if (gliding.current) return;
+
     if (settle.current) clearTimeout(settle.current);
     settle.current = setTimeout(() => {
       if (Math.abs(offset.current - own.current * ROW) < 1) return;

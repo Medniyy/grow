@@ -67,7 +67,7 @@ export default function ShareScreen() {
           handle={grow.handle ?? ''}
           seed={grow.pubkey ?? 'grow'}
           milestone={latest ?? undefined}
-          days={daysGrowing(growStartedAt(grow.actions, growAccount.openedAt), Date.now())}
+          days={daysGrowing(growStartedAt(grow.actions, growAccount.openedAt, grow.restartedAt), Date.now())}
         />
       </View>
 

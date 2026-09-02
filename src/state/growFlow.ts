@@ -90,7 +90,9 @@ export function useGrowFlow() {
       if (controller.signal.aborted) return null;
       setQuote(null);
       console.warn('quote failed:', e);
-      setError(humanTransactionError(e));
+      // 'price', not 'grow': nothing has been signed and usually nothing has
+      // even been pressed. See `FailureStage`.
+      setError(humanTransactionError(e, 'price'));
       setPhase('error');
       return null;
     }

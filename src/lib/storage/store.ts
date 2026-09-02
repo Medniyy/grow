@@ -18,7 +18,15 @@ export type StorageSuffix =
   | 'hints'
   | 'goal'
   /** How much of the total the chain knew about and this device did not. */
-  | 'recovered';
+  | 'recovered'
+  /**
+   * When the CURRENT Grow started over.
+   *
+   * ⚠️ Deliberately NOT cleared by `clearProgressFor` — it is written BY the
+   * closure it records, and wiping it would put the day counter back where the
+   * closure was supposed to move it.
+   */
+  | 'restarted';
 
 export function keyFor(pubkey: string, suffix: StorageSuffix): string {
   if (!pubkey) throw new Error('keyFor: refusing to build an unscoped storage key');

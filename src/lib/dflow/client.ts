@@ -81,7 +81,24 @@ export async function fetchOrder(params: OrderParams, signal?: AbortSignal): Pro
   if (params.dynamicComputeUnitLimit) query.set('dynamicComputeUnitLimit', 'true');
 
   const response = await fetch(`${endpoint()}?${query.toString()}`, { signal });
-  const body: unknown = await response.json();
+  const text = await response.text();
+
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    /**
+     * ⚠️ NOT EVERY FAILURE IS JSON. This used to call `response.json()` first,
+     * so a gateway's HTML error page threw a `SyntaxError` — and the STATUS went
+     * with it. `humanTransactionError` matches on the message, never saw a 503,
+     * fell through to its last branch, and told the user "That Grow did not go
+     * through" about a Grow nobody had attempted.
+     *
+     * Measured 2026-09-02: `dev-quote-api.dflow.net` was returning a 503 page,
+     * and the app reported a failed Grow on a screen the user had not touched.
+     */
+    throw new Error(`DFlow ${response.status}`);
+  }
 
   if (isDFlowError(body)) throw new DFlowRequestError(body);
   if (!response.ok) throw new Error(`DFlow ${response.status}`);

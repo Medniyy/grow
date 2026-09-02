@@ -99,7 +99,10 @@ export default function HomeScreen() {
   }
 
   const { progress } = grow;
-  const days = daysGrowing(growStartedAt(grow.actions, growAccount.openedAt), Date.now());
+  const days = daysGrowing(
+    growStartedAt(grow.actions, growAccount.openedAt, grow.restartedAt),
+    Date.now(),
+  );
   const goal = goalProgress(grow.grown, grow.goalMilestoneId);
   const atZero = grow.grown === 0;
   const canEarn = yieldUnlocked(grow.unlocked);
@@ -304,9 +307,22 @@ export default function HomeScreen() {
 
       <View style={styles.spacer} />
 
-      {/* Home is no longer the same screen every day. The engine reads what
-          actually happened — a move in the wallet, a nearly-finished unlock, a
-          falling market — and this renders whatever it found. */}
+      {/* ⚠️ AN UNREAD WALLET IS NOT AN EMPTY ONE, and the offer must not be
+          manufactured out of one. With the chain read failing, `growable`
+          arrives empty, the engine finds no source and falls back to a padded
+          ask — a card reading "Finish it $1.02" over a wallet the app cannot
+          see, next to a block already saying it could not reach the network.
+          The Grow screen has drawn this distinction since the 403; Home was
+          still guessing. */}
+      {portfolio.error ? (
+        <EmptyState
+          title="Could not read your wallet"
+          body="Grow could not reach the network, so it does not know what you hold."
+          detail={portfolio.error}
+          actionLabel="Try again"
+          onAction={portfolio.refresh}
+        />
+      ) : (
       <OpportunityCard
         opportunity={opportunity}
         onPicked={setPreviewMicro}
@@ -320,6 +336,7 @@ export default function HomeScreen() {
           })
         }
       />
+      )}
     </Screen>
   );
 }

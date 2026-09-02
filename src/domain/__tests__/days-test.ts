@@ -71,3 +71,35 @@ describe('growStartedAt', () => {
     expect(growStartedAt([], null)).toBeNull();
   });
 });
+
+describe('a Grow that started over', () => {
+  const DAY = 86_400_000;
+  const now = Date.UTC(2026, 8, 2, 12);
+
+  it('counts from the restart, not from the account it lives in', () => {
+    // ⚠️ Reported 2026-09-02: "4 days growing" on a Grow funded that morning.
+    // The ledger was empty after a closure, so the count fell back to the
+    // ACCOUNT's age — and closing a Grow does not move the account's birthday.
+    const opened = now - 4 * DAY;
+    const restarted = now - 2 * 60 * 60 * 1000; // this morning
+    expect(growStartedAt([], opened, restarted)).toBe(restarted);
+  });
+
+  it('never claims a Grow began before its account existed', () => {
+    const opened = now - DAY;
+    expect(growStartedAt([], opened, opened - 10 * DAY)).toBe(opened);
+  });
+
+  it('still prefers a real confirmed action to either marker', () => {
+    // The ledger is the truth whenever it has one; the markers are the fallback.
+    const action = { status: 'confirmed', createdAt: now - 3 * DAY } as unknown as Parameters<
+      typeof growStartedAt
+    >[0][0];
+    expect(growStartedAt([action], now - 9 * DAY, now - DAY)).toBe(now - 3 * DAY);
+  });
+
+  it('falls back to the account age when nothing was ever closed', () => {
+    const opened = now - 5 * DAY;
+    expect(growStartedAt([], opened, null)).toBe(opened);
+  });
+});

@@ -168,7 +168,7 @@ export default function ProfileScreen() {
                       returned: Number(amount),
                       grown: grow.grown,
                       days: daysGrowing(
-                        growStartedAt(grow.actions, growAccount.openedAt),
+                        growStartedAt(grow.actions, growAccount.openedAt, grow.restartedAt),
                         Date.now(),
                       ),
                       // Minus the free seed, which nobody earned.

@@ -42,6 +42,13 @@ type GrowState = {
   readonly seenHints: readonly HintId[];
   /** The milestone the user chose to aim at. Null until they are asked. */
   readonly goalMilestoneId: string | null;
+  /**
+   * When this Grow was last started over, or null if it never has been.
+   *
+   * The day counter needs it: a closure clears the ledger, and without this the
+   * count falls back to the ACCOUNT's age, which a closure does not move.
+   */
+  readonly restartedAt: number | null;
 
   recordAction(action: GrowAction): Promise<readonly string[]>;
   setHandle(next: string): Promise<void>;
@@ -69,6 +76,7 @@ export function GrowProvider({ children }: { children: ReactNode }) {
   const [onboarded, setOnboarded] = useState(false);
   const [seenHints, setSeenHints] = useState<readonly HintId[]>([]);
   const [goalMilestoneId, setGoalState] = useState<string | null>(null);
+  const [restartedAt, setRestartedAt] = useState<number | null>(null);
 
   // Reload from scratch whenever the identity changes. Reads are keyed by
   // pubkey, so a wallet switch can never surface the previous wallet's Grow.
@@ -82,13 +90,22 @@ export function GrowProvider({ children }: { children: ReactNode }) {
       setOnboarded(false);
       setSeenHints([]);
       setGoalState(null);
+      setRestartedAt(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
     (async () => {
-      const [storedActions, storedUnlocks, storedHandle, storedFlags, storedGoal, storedRecovered] =
+      const [
+        storedActions,
+        storedUnlocks,
+        storedHandle,
+        storedFlags,
+        storedGoal,
+        storedRecovered,
+        storedRestartedAt,
+      ] =
         await Promise.all([
           readJson<GrowAction[]>(keyFor(pubkey, 'actions'), []),
           readJson<string[]>(keyFor(pubkey, 'unlocks'), []),
@@ -99,6 +116,7 @@ export function GrowProvider({ children }: { children: ReactNode }) {
           }),
           readJson<string | null>(keyFor(pubkey, 'goal'), null),
           readJson<number>(keyFor(pubkey, 'recovered'), 0),
+          readJson<number | null>(keyFor(pubkey, 'restarted'), null),
         ]);
       if (cancelled) return;
 
@@ -120,6 +138,7 @@ export function GrowProvider({ children }: { children: ReactNode }) {
       setOnboarded(storedFlags.onboarded);
       setSeenHints(storedFlags.hints ?? []);
       setGoalState(storedGoal);
+      setRestartedAt(storedRestartedAt);
       // Known BEFORE the chain answers, so the total is right on the first
       // paint. Without it the screen opened on the ledger-only figure and then
       // jumped — $3.70 becoming $5.27 a moment later, which reads as money
@@ -271,6 +290,15 @@ export function GrowProvider({ children }: { children: ReactNode }) {
   const closeGrow = useCallback(async () => {
     if (!pubkey) return;
     await clearProgressFor(pubkey);
+
+    // ⚠️ Written AFTER the wipe, and not among the keys it clears. The ledger is
+    // gone, so the day counter would otherwise fall back to the account's own
+    // age — which a closure does not move, and which reported "4 days growing"
+    // on a Grow that had just started over.
+    const now = Date.now();
+    setRestartedAt(now);
+    await writeJson(keyFor(pubkey, 'restarted'), now);
+
     setActions([]);
     setUnlocked([STARTED_MILESTONE_ID]);
     setGoalState(null);
@@ -302,6 +330,7 @@ export function GrowProvider({ children }: { children: ReactNode }) {
       onboarded,
       seenHints,
       goalMilestoneId,
+      restartedAt,
       recordAction,
       setHandle,
       completeOnboarding,
@@ -321,6 +350,7 @@ export function GrowProvider({ children }: { children: ReactNode }) {
       onboarded,
       seenHints,
       goalMilestoneId,
+      restartedAt,
       recordAction,
       setHandle,
       completeOnboarding,

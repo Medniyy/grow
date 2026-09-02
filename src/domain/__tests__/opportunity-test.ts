@@ -251,3 +251,35 @@ describe('closing a gap out of dollars', () => {
     expect(found.amounts).toEqual([usdToMicro(1.02)]);
   });
 });
+
+describe('an unread wallet is not an empty one', () => {
+  it('never pads the ask when there is no source to pad against', () => {
+    // ⚠️ 2026-09-02: the RPC behind the proxy was returning 500, `holdings`
+    // arrived empty, and the card offered "Finish it $1.02" to close a $1.00 gap
+    // — out of a wallet the app could not see. The pad covers slippage on a
+    // specific asset; with no asset there is nothing to slip.
+    const offer = pickOpportunity({
+      grown: 0,
+      next: { id: 'coffee', label: 'Coffee', thresholdUsd: 1 },
+      remaining: usdToMicro(1),
+      holdings: [],
+    });
+
+    expect(offer.kind).toBe('milestone');
+    expect(offer.amounts).toEqual([usdToMicro(1)]);
+    expect(offer.mint).toBeNull();
+  });
+
+  it('still pads when the gap is closed by selling something', () => {
+    const offer = pickOpportunity({
+      grown: 0,
+      next: { id: 'coffee', label: 'Coffee', thresholdUsd: 1 },
+      remaining: usdToMicro(1),
+      holdings: [
+        { mint: 'So11111111111111111111111111111111111111112', name: 'Wrapped SOL', valueMicro: usdToMicro(50), change24hPct: 2 },
+      ],
+    });
+
+    expect(offer.amounts[0]).toBeGreaterThan(usdToMicro(1));
+  });
+});

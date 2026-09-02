@@ -16,7 +16,18 @@
 /** Money is only at risk once a transaction lands; a simulation never spends. */
 const NOTHING_SPENT = 'Nothing was spent.';
 
-export function humanTransactionError(cause: unknown): string {
+/**
+ * Which half of the flow is speaking.
+ *
+ * ⚠️ Pricing happens on ARRIVAL, before anything is signed and often before the
+ * user has touched the screen. The fallback sentence below is written for a
+ * transaction, and firing it during a quote announced a failed Grow to somebody
+ * who had done nothing at all — which is exactly what a 503 from the quote
+ * endpoint produced on 2026-09-02.
+ */
+export type FailureStage = 'grow' | 'price';
+
+export function humanTransactionError(cause: unknown, stage: FailureStage = 'grow'): string {
   // DFlow already answers for itself — `route_not_found` becomes "No route for
   // that amount right now. Try a slightly larger amount.", which is more useful
   // than anything below. Matched by NAME so this module stays free of the DFlow
@@ -62,5 +73,7 @@ export function humanTransactionError(cause: unknown): string {
 
   // A single line, and never the dump. The full text still reaches the console
   // through the caller, which is where a developer should be looking anyway.
-  return `That Grow did not go through. ${NOTHING_SPENT}`;
+  return stage === 'price'
+    ? 'Could not price that right now. Try again in a moment.'
+    : `That Grow did not go through. ${NOTHING_SPENT}`;
 }

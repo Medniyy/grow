@@ -216,9 +216,16 @@ export function pickOpportunity(input: OpportunityInput): Opportunity {
        * headroom against swap slippage; a USDC Grow is a transfer, out equals
        * in exactly, and padding it asks $1.02 to close a $1.00 gap for no
        * reason anyone could explain.
+       *
+       * ⚠️ AND EXCEPT WHEN THERE IS NO SOURCE AT ALL. `$1.02` came back on
+       * 2026-09-02 on a wallet the app could not read: the RPC was returning
+       * 500, `holdings` arrived empty, `sourceFor` returned null, and the pad
+       * was applied to protect a swap that had no input. The pad exists to
+       * cover slippage on a specific asset — with no asset there is nothing to
+       * slip, and padding an unknown wallet invents two cents out of nothing.
        */
       amounts: atLeastFloor([
-        source?.mint === USDC.mint ? remaining : paddedTarget(remaining),
+        source === null || source.mint === USDC.mint ? remaining : paddedTarget(remaining),
       ]),
       mint: source?.mint ?? null,
     };

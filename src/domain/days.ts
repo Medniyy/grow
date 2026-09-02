@@ -34,17 +34,34 @@ const DAY_MS = 86_400_000;
  * either nothing has been grown yet, or local storage was cleared and the money
  * is still on chain. Over-reporting there is the lesser wrong — the alternative
  * is telling a two-week saver they started today.
+ *
+ * ⚠️ EXCEPT AFTER A CLOSURE, WHICH IS WHY `restartedAtMs` EXISTS. Closing a Grow
+ * clears the ledger, so the fallback took over — and the fallback is the
+ * account's birth, which a closure does not move. The result was "4 days
+ * growing" on a Grow started this morning, reported on 2026-09-02. The account
+ * is the address and it is old; the Grow is what is currently growing in it.
+ *
+ * It only helps when the closure happened through the app. A cleared browser
+ * loses the marker along with everything else, and the counter is back to the
+ * account's age — still the lesser wrong, and still not a guess.
  */
 export function growStartedAt(
   actions: readonly GrowAction[],
   accountOpenedAtMs: number | null,
+  restartedAtMs: number | null = null,
 ): number | null {
   let earliest: number | null = null;
   for (const action of actions) {
     if (action.status !== 'confirmed') continue;
     if (earliest === null || action.createdAt < earliest) earliest = action.createdAt;
   }
-  return earliest ?? accountOpenedAtMs;
+  if (earliest !== null) return earliest;
+
+  if (accountOpenedAtMs == null) return restartedAtMs;
+  if (restartedAtMs == null) return accountOpenedAtMs;
+  // The later of the two: the account cannot have started growing again before
+  // it was opened, and it did not keep growing through the closure.
+  return Math.max(accountOpenedAtMs, restartedAtMs);
 }
 
 function startOfLocalDay(ms: number): number {
