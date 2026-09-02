@@ -4,8 +4,9 @@
 
 # Grow
 
-**Save the change you already have —<br/>
-a fraction of any token in your wallet, kept in an account only you can open.**
+**Strava for saving.**
+
+Small amounts, visible progress, milestones worth showing people.
 
 [![Licence](https://img.shields.io/badge/licence-MIT-365d49?style=flat-square)](LICENSE)
 [![Custody](https://img.shields.io/badge/custody-none-365d49?style=flat-square)](#security--custody)
@@ -21,21 +22,36 @@ a fraction of any token in your wallet, kept in an account only you can open.**
 
 ## What this is
 
-Everyone who holds crypto already has savings and does not experience them as
-savings. A wallet is a spending screen: balances that move, a chart, a swap
-button. Nothing in it ever says *this part is not for spending.*
+A savings app that behaves like a game. You keep a dollar or three out of what
+is already in your wallet, and every time you do, a plant grows, a bar fills and
+you move up a ladder of sixteen milestones — Coffee at $1, Serious Stack at
+$10,000. Progress is shareable, so saving stops being a private spreadsheet.
 
-Savings apps answer that with a deposit — link a bank, move money in, wait. That
-is a wall in front of a decision that should take one tap, and it asks for money
-the user still has to find. **Grow asks for money they are already holding.**
+The point is the habit, not the balance. Grow is built to make the next small
+deposit feel worth making.
 
-A Grow is one action: pick an amount, pick what it comes out of, confirm.
+One Grow is one action: pick an amount, pick what it comes out of, confirm.
 
 | | What happens | Who holds the money |
 | --- | --- | --- |
 | **Out of a token** | DFlow routes it to USDC and builds the transaction | you sign it; output goes straight to your Grow Account |
 | **Out of dollars** | a plain SPL transfer between two accounts you own | no router, no quote, no slippage |
 | **Afterwards** | the confirmed on-chain amount is recorded — never the quote | the account's authority is your own wallet |
+
+<details>
+<summary><b>Why it asks for money you already hold</b></summary>
+
+<br/>
+
+Everyone holding crypto already has savings and does not experience them as
+savings. A wallet is a spending screen — balances that move, a chart, a swap
+button — and nothing in it ever says *this part is not for spending.*
+
+Savings apps answer that with a deposit: link a bank, move money in, wait. That
+is a wall in front of a decision that should take one tap, and it asks for money
+the user still has to find. Grow only ever asks for money already in the wallet.
+
+</details>
 
 <details>
 <summary><b>Why the ladder matters more than the number</b></summary>
