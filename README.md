@@ -8,13 +8,14 @@
 
 Small amounts, visible progress, milestones worth showing people.
 
+[![Live](https://img.shields.io/badge/live-open%20the%20app-171816?style=flat-square)](https://grow-web-production-910d.up.railway.app)
 [![Licence](https://img.shields.io/badge/licence-MIT-365d49?style=flat-square)](LICENSE)
 [![Custody](https://img.shields.io/badge/custody-none-365d49?style=flat-square)](#security--custody)
 [![Network](https://img.shields.io/badge/network-mainnet-171816?style=flat-square)](#quick-start)
 [![Routing](https://img.shields.io/badge/routing-DFlow-171816?style=flat-square)](#notes-from-the-dflow-integration)
 [![Tests](https://img.shields.io/badge/tests-238%20passing-365d49?style=flat-square)](#tests)
 
-[Architecture](#architecture) · [Security](#security--custody) · [Backend](backend/README.md) · [DFlow](https://pond.dflow.net)
+[**Open the app ↗**](https://grow-web-production-910d.up.railway.app) · [Architecture](#architecture) · [Security](#security--custody) · [Backend](backend/README.md) · [DFlow](https://pond.dflow.net)
 
 </div>
 

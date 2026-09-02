@@ -67,3 +67,6 @@ AGENTS.md
 CLAUDE.md
 skills-lock.json
 test-artifacts/
+
+# The copy of dist/ that gets pushed to the host. Generated, never edited.
+web/public/
